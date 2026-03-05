@@ -3,10 +3,6 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
-import 'package:http_parser/http_parser.dart';
-import 'package:path/path.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:food/services/auth_exception.dart';
 
 class UserService {
   final String baseUrl = "https://qx-xsuiuwj7yq-uc.a.run.app";

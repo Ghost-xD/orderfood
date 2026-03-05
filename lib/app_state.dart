@@ -77,6 +77,9 @@ class AppState extends ChangeNotifier {
           coins: data['coins'] ?? 0,
           rescuePasses: data['rescuePasses'] ?? 5,
           isSubscribed: data['isSubscribed'] ?? false,
+          lockedMealId: data['lockedMealId'],
+          lockedVendorId: data['lockedVendorId'],
+          currentMealStatus: _parseMealStatus(data['currentMealStatus']),
         );
       } else {
         user = UserProfile(
@@ -88,6 +91,16 @@ class AppState extends ChangeNotifier {
           rescuePasses: 5,
           isSubscribed: false,
         );
+        // Save initial user profile
+        await _firestore.collection('users').doc(firebaseUser.uid).set({
+          'name': user.name,
+          'email': user.email,
+          'photoURL': user.profileImage,
+          'coins': user.coins,
+          'rescuePasses': user.rescuePasses,
+          'isSubscribed': user.isSubscribed,
+          'currentMealStatus': user.currentMealStatus.name,
+        });
       }
 
       _isUserLoaded = true;
@@ -105,6 +118,14 @@ class AppState extends ChangeNotifier {
       _isUserLoaded = true;
       notifyListeners();
     }
+  }
+
+  MealStatus _parseMealStatus(String? status) {
+    if (status == null) return MealStatus.available;
+    return MealStatus.values.firstWhere(
+      (e) => e.name == status,
+      orElse: () => MealStatus.available,
+    );
   }
 
   /// Reset state when user signs out.
@@ -128,7 +149,7 @@ class AppState extends ChangeNotifier {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     try {
-      await _firestore.collection('users').doc(uid).update(fields);
+      await _firestore.collection('users').doc(uid).set(fields, SetOptions(merge: true));
     } catch (e) {
       debugPrint('Firestore sync error: $e');
     }
@@ -146,7 +167,10 @@ class AppState extends ChangeNotifier {
         user.coins -= 1;
         user.currentMealStatus = MealStatus.expired;
         totalAutoDeductions++;
-        _syncToFirestore({'coins': user.coins});
+        _syncToFirestore({
+          'coins': user.coins,
+          'currentMealStatus': user.currentMealStatus.name,
+        });
       }
     }
 
@@ -156,6 +180,11 @@ class AppState extends ChangeNotifier {
       user.lockedMealId = null;
       user.lockedVendorId = null;
       user.currentMealStatus = MealStatus.available;
+      _syncToFirestore({
+        'lockedMealId': null,
+        'lockedVendorId': null,
+        'currentMealStatus': MealStatus.available.name,
+      });
     }
   }
 
@@ -183,7 +212,7 @@ class AppState extends ChangeNotifier {
 
   void subscribe() {
     user.isSubscribed = true;
-    user.coins += 30;
+    user.coins += 30; // Grant initial coins
     _syncToFirestore({
       'isSubscribed': true,
       'coins': user.coins,
@@ -192,14 +221,21 @@ class AppState extends ChangeNotifier {
   }
 
   String? lockMeal(String vendorId, String mealId) {
-    if (!isLockWindow()) return "Lock-in window closed!";
-    if (user.coins <= 0) return "Not enough coins!";
+    if (!isLockWindow()) return "Lock-in window closed! (7 AM - 11 AM)";
+    if (user.coins <= 0) return "Not enough coins! Please subscribe.";
 
     user.lockedMealId = mealId;
     user.lockedVendorId = vendorId;
     user.coins -= 1;
     user.currentMealStatus = MealStatus.locked;
-    _syncToFirestore({'coins': user.coins});
+    
+    _syncToFirestore({
+      'coins': user.coins,
+      'lockedMealId': mealId,
+      'lockedVendorId': vendorId,
+      'currentMealStatus': user.currentMealStatus.name,
+    });
+    
     notifyListeners();
     return null;
   }
@@ -213,6 +249,7 @@ class AppState extends ChangeNotifier {
       _syncToFirestore({
         'rescuePasses': user.rescuePasses,
         'coins': user.coins,
+        'currentMealStatus': user.currentMealStatus.name,
       });
       notifyListeners();
     }
@@ -221,6 +258,9 @@ class AppState extends ChangeNotifier {
   void consumeMeal() {
     user.currentMealStatus = MealStatus.consumed;
     totalConsumed++;
+    _syncToFirestore({
+      'currentMealStatus': user.currentMealStatus.name,
+    });
     notifyListeners();
   }
 }

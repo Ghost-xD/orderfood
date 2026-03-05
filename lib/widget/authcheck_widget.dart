@@ -49,25 +49,61 @@ class _AuthenticatedLoaderState extends State<_AuthenticatedLoader> {
   void initState() {
     super.initState();
     final appState = Provider.of<AppState>(context, listen: false);
-    _loadFuture = appState.loadUserFromFirestore(widget.firebaseUser);
+    _loadFuture = _loadAndWelcome(appState);
+  }
+
+  Future<void> _loadAndWelcome(AppState appState) async {
+    await appState.loadUserFromFirestore(widget.firebaseUser);
+    // Show welcome message for a moment
+    await Future.delayed(const Duration(seconds: 2));
   }
 
   @override
   Widget build(BuildContext context) {
+    final appState = Provider.of<AppState>(context);
     return FutureBuilder<void>(
       future: _loadFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.done) {
           return const MainWrapper();
         }
-        return const Scaffold(
-          body: Center(
+        
+        return Scaffold(
+          body: Container(
+            width: double.infinity,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Colors.orange.shade300, Colors.orange.shade800],
+              ),
+            ),
             child: Column(
-              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                CircularProgressIndicator(),
-                SizedBox(height: 16),
-                Text('Loading your profile...'),
+                CircleAvatar(
+                  radius: 50,
+                  backgroundColor: Colors.white,
+                  backgroundImage: appState.user.profileImage != null 
+                    ? NetworkImage(appState.user.profileImage!) 
+                    : null,
+                  child: appState.user.profileImage == null 
+                    ? const Icon(Icons.person, size: 50, color: Colors.orange) 
+                    : null,
+                ),
+                const SizedBox(height: 24),
+                Text(
+                  appState.isUserLoaded 
+                    ? 'Welcome, ${appState.user.name}!' 
+                    : 'Loading your profile...',
+                  style: const TextStyle(
+                    fontSize: 24, 
+                    fontWeight: FontWeight.bold, 
+                    color: Colors.white
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const CircularProgressIndicator(color: Colors.white),
               ],
             ),
           ),

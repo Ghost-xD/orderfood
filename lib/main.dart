@@ -156,8 +156,15 @@ class MainWrapper extends StatelessWidget {
   }
 }
 
-class SubscriptionGate extends StatelessWidget {
+class SubscriptionGate extends StatefulWidget {
   const SubscriptionGate({super.key});
+
+  @override
+  State<SubscriptionGate> createState() => _SubscriptionGateState();
+}
+
+class _SubscriptionGateState extends State<SubscriptionGate> {
+  bool _isSubscribing = false;
 
   @override
   Widget build(BuildContext context) {
@@ -185,8 +192,26 @@ class SubscriptionGate extends StatelessWidget {
                 style: ElevatedButton.styleFrom(
                   minimumSize: const Size.fromHeight(50),
                 ),
-                onPressed: () => appState.subscribe(),
-                child: const Text("Buy 30-Day Plan (90 Coins)"),
+                onPressed: _isSubscribing 
+                  ? null 
+                  : () async {
+                      setState(() => _isSubscribing = true);
+                      // Simulate a small delay for better UX
+                      await Future.delayed(const Duration(milliseconds: 800));
+                      appState.subscribe();
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text("Subscription Active! Enjoy your meals.")),
+                        );
+                      }
+                    },
+                child: _isSubscribing 
+                  ? const SizedBox(
+                      height: 20, 
+                      width: 20, 
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)
+                    )
+                  : const Text("Buy 30-Day Plan (90 Coins)"),
               ),
             ],
           ),
@@ -307,7 +332,13 @@ class StudentHomeScreen extends StatelessWidget {
                 onPressed: () {
                   final error = appState.lockMeal(vendor.id, meal.id);
                   if (error != null) {
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      content: Text(error),
+                      action: SnackBarAction(
+                        label: 'Change Time',
+                        onPressed: () => _showTimeTravelDialog(context, appState),
+                      ),
+                    ));
                   }
                 },
                 child: const Text("🔒 LOCK"),
@@ -316,6 +347,41 @@ class StudentHomeScreen extends StatelessWidget {
           ),
         )),
       ],
+    );
+  }
+
+  void _showTimeTravelDialog(BuildContext context, AppState appState) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Debug: Set Time"),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              title: const Text("7:30 AM (Lock-in Window)"),
+              onTap: () {
+                appState.setSimulatedTime(7, 30);
+                Navigator.pop(context);
+              },
+            ),
+            ListTile(
+              title: const Text("11:05 AM (Expired)"),
+              onTap: () {
+                appState.setSimulatedTime(11, 5);
+                Navigator.pop(context);
+              },
+            ),
+            ListTile(
+              title: const Text("1:30 PM (Pickup Window)"),
+              onTap: () {
+                appState.setSimulatedTime(13, 30);
+                Navigator.pop(context);
+              },
+            ),
+          ],
+        ),
+      ),
     );
   }
 
