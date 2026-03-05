@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -23,35 +24,73 @@ class AuthService with ChangeNotifier {
   bool _isLoggedIn = false;
   final UserService _userService = UserService();
   final FirebaseAuth _firebaseAuth = FirebaseAuth.instance;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   Map<String, dynamic> _userDetails = {};
   final _storage = const FlutterSecureStorage();
 
   bool get isLoggedIn => _isLoggedIn;
   Map<String, dynamic> get userDetails => _userDetails;
+  User? get currentUser => _firebaseAuth.currentUser;
 
   int currIndex = 0;
 
   final GoogleSignIn _googleSignIn = GoogleSignIn();
 
+  /// Signs in with Google, creates/updates user document in Firestore,
+  /// and returns the Firebase [User] on success.
   Future<User?> signInWithGoogle() async {
     try {
       final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
-      if (googleUser == null) {
-        return null;
-      }
+      if (googleUser == null) return null;
 
-      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+      final GoogleSignInAuthentication googleAuth =
+          await googleUser.authentication;
       final AuthCredential credential = GoogleAuthProvider.credential(
         accessToken: googleAuth.accessToken,
         idToken: googleAuth.idToken,
       );
-      _isLoggedIn = true;
 
-      final UserCredential userCredential = await _firebaseAuth.signInWithCredential(credential);
-      return userCredential.user;
+      final UserCredential userCredential =
+          await _firebaseAuth.signInWithCredential(credential);
+      final User? user = userCredential.user;
+
+      if (user != null) {
+        await _createOrUpdateFirestoreUser(user);
+        _isLoggedIn = true;
+        notifyListeners();
+      }
+
+      return user;
     } catch (e) {
-      print(e);
+      debugPrint('Google Sign-In error: $e');
       return null;
+    }
+  }
+
+  /// Creates a new user document in Firestore or updates lastSignIn
+  /// for returning users.
+  Future<void> _createOrUpdateFirestoreUser(User user) async {
+    final docRef = _firestore.collection('users').doc(user.uid);
+    final snapshot = await docRef.get();
+
+    if (!snapshot.exists) {
+      await docRef.set({
+        'uid': user.uid,
+        'name': user.displayName ?? '',
+        'email': user.email ?? '',
+        'photoURL': user.photoURL ?? '',
+        'createdAt': FieldValue.serverTimestamp(),
+        'lastSignIn': FieldValue.serverTimestamp(),
+        'coins': 0,
+        'rescuePasses': 5,
+        'isSubscribed': false,
+      });
+    } else {
+      await docRef.update({
+        'lastSignIn': FieldValue.serverTimestamp(),
+        'name': user.displayName ?? snapshot.data()?['name'] ?? '',
+        'photoURL': user.photoURL ?? snapshot.data()?['photoURL'] ?? '',
+      });
     }
   }
 
@@ -59,6 +98,7 @@ class AuthService with ChangeNotifier {
     _isLoggedIn = false;
     await _firebaseAuth.signOut();
     await _googleSignIn.signOut();
+    notifyListeners();
   }
 
   Future<String?> checkLoginStatus() async {
@@ -79,7 +119,8 @@ class AuthService with ChangeNotifier {
 
   Future<void> registeruser(Map<String, dynamic> userData) async {
     try {
-      Map<String, dynamic> response = await _userService.registerUser(userData);
+      Map<String, dynamic> response =
+          await _userService.registerUser(userData);
       if (response.containsKey('success')) {
         await login(userData['email'], userData['password']);
       }
@@ -90,13 +131,18 @@ class AuthService with ChangeNotifier {
 
   Future<void> login(String email, String password) async {
     try {
-      Map<String, dynamic> response = await _userService.loginUser(email, password);
-      if (response.containsKey('access_token') && response.containsKey('refresh_token')) {
-        await _storage.write(key: 'access_token', value: response['access_token']);
-        await _storage.write(key: 'refresh_token', value: response['refresh_token']);
+      Map<String, dynamic> response =
+          await _userService.loginUser(email, password);
+      if (response.containsKey('access_token') &&
+          response.containsKey('refresh_token')) {
+        await _storage.write(
+            key: 'access_token', value: response['access_token']);
+        await _storage.write(
+            key: 'refresh_token', value: response['refresh_token']);
         _isLoggedIn = true;
         currIndex = 0;
-        _userDetails = await _userService.getUserDetails(email, response['access_token']);
+        _userDetails =
+            await _userService.getUserDetails(email, response['access_token']);
         await _saveToPrefs();
         notifyListeners();
       }
@@ -108,23 +154,29 @@ class AuthService with ChangeNotifier {
 
   Future<AuthStatus> sendPasswordResetEmail(String email) async {
     try {
-      await _firebaseAuth.sendPasswordResetEmail(email: email)
-        .then((value) => _authStatus = AuthStatus.successful)
-        .catchError((e) => _authStatus = AuthExceptionHandler.handleAuthException(e));
-        return _authStatus;
+      await _firebaseAuth
+          .sendPasswordResetEmail(email: email)
+          .then((value) => _authStatus = AuthStatus.successful)
+          .catchError((e) =>
+              _authStatus = AuthExceptionHandler.handleAuthException(e));
+      return _authStatus;
     } on FirebaseAuthException catch (e) {
-      throw FirebaseAuthException(code: e.code, message: _getErrorMessage(e.code));
+      throw FirebaseAuthException(
+          code: e.code, message: _getErrorMessage(e.code));
     } catch (e) {
       throw Exception('Password reset failed');
     }
   }
 
-  Future<void> logout() async {    
+  Future<void> logout() async {
     await _storage.delete(key: 'access_token');
     await _storage.delete(key: 'refreshToken');
     await _storage.delete(key: 'userDetails');
     final prefs = await SharedPreferences.getInstance();
-    await FirebaseAuth.instance.signOut();
+    await _firebaseAuth.signOut();
+    try {
+      await _googleSignIn.signOut();
+    } catch (_) {}
     await prefs.setBool('isLoggedIn', false);
     _isLoggedIn = false;
     notifyListeners();
@@ -161,41 +213,40 @@ class AuthService with ChangeNotifier {
   Future<UserProfile?> getUserDetails() async {
     final userDetailsJson = await _storage.read(key: 'userDetails');
     if (userDetailsJson != null) {
-        final userDetailsMap = jsonDecode(userDetailsJson) as Map<String, dynamic>;
-        return UserProfile(
-          id: userDetailsMap['id'] ?? userDetailsMap['email'] ?? 'unknown',
-          name: userDetailsMap['name'] ?? '${userDetailsMap['firstName']} ${userDetailsMap['lastName']}',
-          email: userDetailsMap['email'],
-          firstName: userDetailsMap['firstName'],
-          isUserPro: userDetailsMap['isUserPro'] ?? false,
-          lastName: userDetailsMap['lastName'],
-          phoneNumber: userDetailsMap['phoneNumber'],
-          planType: userDetailsMap['planType'],
-          profileImage: userDetailsMap['profileImage'],
-        );
+      final userDetailsMap =
+          jsonDecode(userDetailsJson) as Map<String, dynamic>;
+      return UserProfile(
+        id: userDetailsMap['id'] ?? userDetailsMap['email'] ?? 'unknown',
+        name: userDetailsMap['name'] ??
+            '${userDetailsMap['firstName']} ${userDetailsMap['lastName']}',
+        email: userDetailsMap['email'],
+        firstName: userDetailsMap['firstName'],
+        isUserPro: userDetailsMap['isUserPro'] ?? false,
+        lastName: userDetailsMap['lastName'],
+        phoneNumber: userDetailsMap['phoneNumber'],
+        planType: userDetailsMap['planType'],
+        profileImage: userDetailsMap['profileImage'],
+      );
     }
     return null;
-    }
-
-  Future<void> updateUser(String email, Map<String, dynamic> userData) async {
-    try {
-        Map<String, dynamic> response = await _userService.updateUser(email, userData);
-        if (response.containsKey('msg')) {
-          userData.forEach((key, value) {
-            if (_userDetails.containsKey(key)) {
-              _userDetails[key] = value;
-            } else {
-              _userDetails[key] = value;
-            }
-          });
-          await _saveToPrefs();
-          notifyListeners();
-        }
-    } catch (e) {
-        throw Exception('Failed to update user: $e');
-    }
   }
 
+  Future<void> updateUser(
+      String email, Map<String, dynamic> userData) async {
+    try {
+      Map<String, dynamic> response =
+          await _userService.updateUser(email, userData);
+      if (response.containsKey('msg')) {
+        userData.forEach((key, value) {
+          _userDetails[key] = value;
+        });
+        await _saveToPrefs();
+        notifyListeners();
+      }
+    } catch (e) {
+      throw Exception('Failed to update user: $e');
+    }
+  }
 }
 
 enum AuthStatus {
@@ -228,6 +279,7 @@ class AuthExceptionHandler {
     }
     return status;
   }
+
   static String generateErrorMessage(error) {
     String errorMessage;
     switch (error) {

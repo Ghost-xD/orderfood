@@ -9,32 +9,16 @@ import 'package:food/pages/login/login_page.dart';
 import 'package:food/services/auth_service.dart';
 import 'package:food/services/loading_service.dart';
 import 'package:food/widget/authcheck_widget.dart';
+import 'package:food/firebase_options.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
-  // Attempt to initialize Firebase. 
-  // For a real app, you should run `flutterfire configure`.
-  // Here we use a try-catch with dummy options to prevent the crash if google-services.json is missing.
-  try {
-    await Firebase.initializeApp();
-  } catch (e) {
-    if (e.toString().contains('google-services.json') || e.toString().contains('Failed to load FirebaseOptions')) {
-      debugPrint('Firebase initialization failed: Missing config file. Initializing with dummy options for demo.');
-      await Firebase.initializeApp(
-        options: const FirebaseOptions(
-          apiKey: "demo-api-key",
-          appId: "demo-app-id",
-          messagingSenderId: "demo-sender-id",
-          projectId: "demo-project-id",
-        ),
-      );
-    } else {
-      rethrow;
-    }
-  }
+
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
 
   runApp(
     MultiProvider(

@@ -1,18 +1,13 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_ui_auth/firebase_ui_auth.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:google_sign_in/google_sign_in.dart';
-import 'package:food/main.dart';
+import 'package:provider/provider.dart';
 import 'package:food/pages/register/register.dart';
 import 'package:food/pages/reset/reset.dart';
 import 'package:food/services/auth_service.dart';
 import 'package:food/widget/custom_dialog.dart';
-import '../../widget/topsection_widget.dart';
-import '../../widget/main_content_widget.dart';
-import 'package:firebase_ui_oauth_google/firebase_ui_oauth_google.dart';
+import 'package:food/main.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -20,12 +15,11 @@ class LoginPage extends StatefulWidget {
   @override
   State<LoginPage> createState() => _LoginPageState();
 }
-class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMixin<LoginPage> {
-  bool isLoading = false;
-  final AuthService _authService = AuthService();
 
-  final FirebaseAuth _authFB = FirebaseAuth.instance;
-  final GoogleSignIn _googleSignIn = GoogleSignIn();
+class _LoginPageState extends State<LoginPage>
+    with SingleTickerProviderStateMixin<LoginPage> {
+  bool isLoading = false;
+  bool _isGoogleLoading = false;
 
   late final AnimationController loginButtonController;
   late final Animation<double> buttonSqueezeAnimation;
@@ -35,7 +29,6 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
   final passwordFocusNode = FocusNode();
 
   bool _obscureText = true;
-
   bool isEmailValid = true;
   bool isPasswordValid = true;
 
@@ -55,19 +48,13 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
   void _validatePassword() {
     setState(() {
       final password = _passwordController.text;
-      if (password.length >= 6) {
-        isPasswordValid = true;
-      } else {
-        isPasswordValid = false;
-      }
+      isPasswordValid = password.length >= 6;
     });
   }
-
 
   @override
   void initState() {
     super.initState();
-
     SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.light);
 
     _emailController.addListener(_validateEmail);
@@ -83,10 +70,7 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
     ).animate(
       CurvedAnimation(
         parent: loginButtonController,
-        curve: const Interval(
-          0.0,
-          0.250,
-        ),
+        curve: const Interval(0.0, 0.250),
       ),
     );
   }
@@ -98,45 +82,35 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
     super.dispose();
   }
 
-  Future<void> _signInWithGoogle(BuildContext context) async {
+  Future<void> _signInWithGoogle() async {
+    setState(() => _isGoogleLoading = true);
     try {
-      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
+      final authService = Provider.of<AuthService>(context, listen: false);
+      final User? user = await authService.signInWithGoogle();
 
-      final GoogleSignInAuthentication googleAuth = await googleUser!.authentication;
+      if (!mounted) return;
 
-      final credential = GoogleAuthProvider.credential(
-        accessToken: googleAuth.accessToken,
-        idToken: googleAuth.idToken,
-      );
-
-      final UserCredential authResult = await _authFB.signInWithCredential(credential);
-      final User? user = authResult.user;
-
-      bool isNewUser = false;
-      await FirebaseFirestore.instance.runTransaction((transaction) async {
-        DocumentSnapshot snapshot = await transaction.get(FirebaseFirestore.instance.collection('users').doc(user!.uid));
-
-        if (!snapshot.exists) {
-          transaction.set(FirebaseFirestore.instance.collection('users').doc(user!.uid), {'name': user.displayName});
-          isNewUser = true;
-        }
-      });
-
-      if (isNewUser) {
-        // ignore: use_build_context_synchronously
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const MainWrapper()),
-        );
+      if (user != null) {
+        // Auth state change triggers AuthCheck to show MainWrapper
+        Navigator.of(context).popUntil((route) => route.isFirst);
       } else {
-        // ignore: use_build_context_synchronously
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const MainWrapper()),
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Google Sign-In cancelled.'),
+            backgroundColor: Colors.orange,
+          ),
         );
       }
     } catch (e) {
-      print(e);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Google Sign-In failed: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isGoogleLoading = false);
     }
   }
 
@@ -158,7 +132,8 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
           mainAxisSize: MainAxisSize.max,
           children: <Widget>[
             Container(
-              margin: EdgeInsets.only(top: MediaQuery.of(context).padding.top),
+              margin:
+                  EdgeInsets.only(top: MediaQuery.of(context).padding.top),
               color: Colors.transparent,
               width: double.infinity,
               height: kToolbarHeight,
@@ -183,7 +158,14 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
                         padding: const EdgeInsets.all(8.0),
                         child: loginButton(),
                       ),
-                      const SizedBox(height: 32.0),
+                      const SizedBox(height: 16.0),
+                      _buildDivider(),
+                      const SizedBox(height: 16.0),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                        child: _buildGoogleSignInButton(),
+                      ),
+                      const SizedBox(height: 24.0),
                       Padding(
                         padding: const EdgeInsets.all(4.0),
                         child: needAnAccount(),
@@ -192,15 +174,6 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
                         padding: const EdgeInsets.all(4.0),
                         child: forgotPassword(),
                       ),
-                      Padding(
-                        padding: const EdgeInsets.all(8.0),
-                        child: ElevatedButton(
-                          onPressed: () {
-                            _signInWithGoogle(context);
-                          },
-                          child: Text('Sign in  Google'),
-                        ),
-                      ),                      
                     ],
                   ),
                 ),
@@ -212,6 +185,53 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
     );
   }
 
+  Widget _buildDivider() {
+    return const Padding(
+      padding: EdgeInsets.symmetric(horizontal: 24.0),
+      child: Row(
+        children: [
+          Expanded(child: Divider(color: Colors.white38)),
+          Padding(
+            padding: EdgeInsets.symmetric(horizontal: 12.0),
+            child: Text('OR', style: TextStyle(color: Colors.white54)),
+          ),
+          Expanded(child: Divider(color: Colors.white38)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGoogleSignInButton() {
+    return SizedBox(
+      width: 320,
+      height: 50,
+      child: ElevatedButton.icon(
+        onPressed: _isGoogleLoading ? null : _signInWithGoogle,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.white,
+          foregroundColor: Colors.black87,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24.0),
+          ),
+        ),
+        icon: _isGoogleLoading
+            ? const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : Image.network(
+                'https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg',
+                height: 20,
+                width: 20,
+                errorBuilder: (_, __, ___) =>
+                    const Icon(Icons.g_mobiledata, size: 24),
+              ),
+        label: const Text('Sign in with Google'),
+      ),
+    );
+  }
+
   Widget emailTextField() {
     return TextField(
       controller: _emailController,
@@ -219,7 +239,7 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
       decoration: const InputDecoration(
         prefixIcon: Padding(
           padding: EdgeInsetsDirectional.only(end: 8.0),
-          child: Icon(Icons.email, color: Colors.white,),
+          child: Icon(Icons.email, color: Colors.white),
         ),
         labelText: 'Email',
         labelStyle: TextStyle(color: Colors.white),
@@ -265,7 +285,7 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
         FocusScope.of(context).unfocus();
       },
       textInputAction: TextInputAction.done,
-      focusNode: passwordFocusNode
+      focusNode: passwordFocusNode,
     );
   }
 
@@ -274,17 +294,13 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
       animation: buttonSqueezeAnimation,
       builder: (context, child) {
         final value = buttonSqueezeAnimation.value;
-
         return SizedBox(
           width: value,
           height: 60.0,
           child: Container(
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(24.0),
-              border: Border.all(
-                color: Colors.greenAccent,
-                width: 2.0,
-              ),
+              border: Border.all(color: Colors.greenAccent, width: 2.0),
             ),
             child: Material(
               elevation: 5.0,
@@ -297,7 +313,8 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
                       child: CircularProgressIndicator(
                         strokeWidth: 2.0,
                         backgroundColor: Colors.green,
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                        valueColor:
+                            AlwaysStoppedAnimation<Color>(Colors.white),
                       ),
                     ),
             ),
@@ -307,19 +324,15 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
       child: MaterialButton(
         onPressed: () {
           FocusScope.of(context).unfocus();
-          setState(() {
-            isLoading = true;
-          });
+          setState(() => isLoading = true);
           _login();
         },
         color: Colors.transparent,
-        splashColor: Theme.of(context).colorScheme.secondary.withOpacity(0.5),
+        splashColor:
+            Theme.of(context).colorScheme.secondary.withOpacity(0.5),
         child: const Text(
           'LOGIN',
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 16.0,
-          ),
+          style: TextStyle(color: Colors.white, fontSize: 16.0),
         ),
       ),
     );
@@ -327,12 +340,10 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
 
   Widget needAnAccount() {
     return TextButton(
-      onPressed: () async {
+      onPressed: () {
         Navigator.pushReplacement(
           context,
-          CupertinoPageRoute(
-            builder: (context) => const RegisterPage(),
-          ),
+          CupertinoPageRoute(builder: (context) => const RegisterPage()),
         );
       },
       child: const Text(
@@ -348,12 +359,10 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
 
   Widget forgotPassword() {
     return TextButton(
-      onPressed: () async {
+      onPressed: () {
         Navigator.pushReplacement(
           context,
-          CupertinoPageRoute(
-            builder: (context) => const ResetPage(),
-          ),
+          CupertinoPageRoute(builder: (context) => const ResetPage()),
         );
       },
       child: const Text(
@@ -367,85 +376,65 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
     );
   }
 
-  Widget signInWithGoogle() {
-    return ElevatedButton(
-      onPressed: () async {
-        User? user = await _authService.signInWithGoogle();
-        if (user != null) {
-          print('Signed in as ${user.displayName}');
-        } else {
-          // ignore: use_build_context_synchronously
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Login failed.'),backgroundColor: Colors.red,),);
-          }
-      },
-      child: Text('Sign in with Google'),
-    );
-  }
-
   void _login() async {
-
+    final authService = Provider.of<AuthService>(context, listen: false);
     String email = _emailController.text.trim();
     String password = _passwordController.text;
 
-    if (isEmailValid && isPasswordValid){
+    if (isEmailValid && isPasswordValid) {
       try {
-        await _authService.login(email, password);
+        await authService.login(email, password);
 
-        if (_authService.isLoggedIn) {
-          if(mounted){
+        if (authService.isLoggedIn) {
+          if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Login successful.'),
-              backgroundColor: Colors.green,
-            ),
+              const SnackBar(
+                content: Text('Login successful.'),
+                backgroundColor: Colors.green,
+              ),
             );
-            Navigator.push(context,MaterialPageRoute(builder: (context) => const MainWrapper()),);
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const MainWrapper()),
+            );
           }
         } else {
           isLoading = false;
-          if(mounted){
+          if (mounted) {
             showDialog(
-                context: context,
-                builder: (BuildContext context) {
-                  return const CustomAlertDialog(
-                    title: 'Error',
-                    message: 'Login failed.',
-                  );
-                },
-              );
+              context: context,
+              builder: (BuildContext context) {
+                return const CustomAlertDialog(
+                  title: 'Error',
+                  message: 'Login failed.',
+                );
+              },
+            );
           }
         }
       } catch (e) {
-        if(mounted){
+        if (mounted) {
           showDialog(
-                context: context,
-                builder: (BuildContext context) {
-                  return const CustomAlertDialog(
-                    title: 'Error',
-                    message: 'Login failed.',
-                  );
-                },
+            context: context,
+            builder: (BuildContext context) {
+              return const CustomAlertDialog(
+                title: 'Error',
+                message: 'Login failed.',
               );
+            },
+          );
         }
       } finally {
-        setState(() {
-          isLoading = false;
-        });
+        if (mounted) setState(() => isLoading = false);
       }
-    }
-    else{
+    } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Please Check Credentials.'),
           backgroundColor: Colors.red,
         ),
       );
-      setState(() {
-        isLoading = false;
-      });
+      setState(() => isLoading = false);
     }
-
   }
-
 }
