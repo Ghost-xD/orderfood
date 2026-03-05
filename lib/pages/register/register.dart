@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 import 'package:food/main.dart';
 import 'package:food/pages/login/login_page.dart';
 import 'package:food/services/auth_service.dart';
@@ -13,9 +14,10 @@ class RegisterPage extends StatefulWidget {
   @override
   State<RegisterPage> createState() => _RegisterPageState();
 }
+
 class _RegisterPageState extends State<RegisterPage> with SingleTickerProviderStateMixin<RegisterPage> {
   bool isLoading = false;
-  final AuthService _authService = AuthService();
+  bool _isGoogleLoading = false;
   late final AnimationController registerButtonController;
   late final Animation<double> buttonSqueezeAnimation;
 
@@ -345,23 +347,67 @@ class _RegisterPageState extends State<RegisterPage> with SingleTickerProviderSt
     );
   }
 
+  Future<void> _signInWithGoogle() async {
+    setState(() => _isGoogleLoading = true);
+    try {
+      final authService = Provider.of<AuthService>(context, listen: false);
+      final User? user = await authService.signInWithGoogle();
+
+      if (!mounted) return;
+
+      if (user != null) {
+        Navigator.of(context).popUntil((route) => route.isFirst);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Google Sign-In cancelled.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Google Sign-In failed: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isGoogleLoading = false);
+    }
+  }
+
   Widget signInWithGoogle() {
-    return ElevatedButton(
-      onPressed: () async {
-        User? user = await _authService.signInWithGoogle();
-        if (user != null) {
-          print('Signed in as ${user.displayName}');
-        } else {
-          // ignore: use_build_context_synchronously
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Login failed.'),backgroundColor: Colors.red,),);
-          }
-      },
-      child: Text('Sign in with Google'),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8.0),
+      child: SizedBox(
+        width: 320,
+        height: 50,
+        child: ElevatedButton.icon(
+          onPressed: _isGoogleLoading ? null : _signInWithGoogle,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.white,
+            foregroundColor: Colors.black87,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(24.0),
+            ),
+          ),
+          icon: _isGoogleLoading
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.g_mobiledata, size: 24),
+          label: const Text('Sign in with Google'),
+        ),
+      ),
     );
   }
 
   void _register() async {
+    final authService = Provider.of<AuthService>(context, listen: false);
     if (isEmailValid && isPasswordValid && isPasswordMatched){
       Map<String, dynamic> userData = {
         'email': _emailController.text.trim(),
@@ -370,9 +416,9 @@ class _RegisterPageState extends State<RegisterPage> with SingleTickerProviderSt
       };
 
       try {
-        await _authService.registeruser(userData);
+        await authService.registeruser(userData);
 
-        if (_authService.isLoggedIn) {
+        if (authService.isLoggedIn) {
           if(mounted){
             if(mounted){
               ScaffoldMessenger.of(context).showSnackBar(
