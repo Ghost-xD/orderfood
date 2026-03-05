@@ -6,7 +6,11 @@ allprojects {
 }
 
 subprojects {
-    project.evaluationDependsOn(":app")
+    if (project.path != ":app") {
+        rootProject.findProject(":app")?.let {
+            evaluationDependsOn(":app")
+        }
+    }
 }
 
 tasks.register<Delete>("clean") {
