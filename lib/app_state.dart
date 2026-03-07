@@ -62,9 +62,10 @@ class AppState extends ChangeNotifier {
         "name": "Oven Express",
         "logoUrl": "https://example.com/logo1.png",
         "menu": [
-          {"id": "m1", "name": "Chole Bhature", "description": "Classic North Indian delight", "category": "Breakfast", "vendorId": "v1", "priceInCoins": 1.0, "isSoldOut": false},
-          {"id": "m2", "name": "Paneer Wrap", "description": "Spicy paneer in a soft tortilla", "category": "Snacks", "vendorId": "v1", "priceInCoins": 1.0, "isSoldOut": false},
-          {"id": "m5", "name": "Masala Dosa", "description": "Crispy crepe with potato filling", "category": "Breakfast", "vendorId": "v1", "priceInCoins": 1.0, "isSoldOut": true}
+          {"id": "m1", "name": "Chole Bhature", "description": "Classic North Indian delight with fluffy bhature and spicy chickpeas", "category": "Main Course", "vendorId": "v1", "priceInCoins": 1.0, "isVeg": true, "imageUrl": "https://images.unsplash.com/photo-1589301760014-d929f3979dbc?q=80&w=500&auto=format&fit=crop", "isSoldOut": false},
+          {"id": "m2", "name": "Paneer Wrap", "description": "Spicy grilled paneer cubes with fresh veggies in a soft wrap", "category": "Snacks", "vendorId": "v1", "priceInCoins": 1.0, "isVeg": true, "imageUrl": "https://images.unsplash.com/photo-1644704170947-fbf744fc09cc?q=80&w=500&auto=format&fit=crop", "isSoldOut": false},
+          {"id": "m5", "name": "Masala Dosa", "description": "Crispy south indian crepe filled with tempered potato mash", "category": "South Indian", "vendorId": "v1", "priceInCoins": 1.0, "isVeg": true, "imageUrl": "https://images.unsplash.com/photo-1589301760014-d929f3979dbc?q=80&w=500&auto=format&fit=crop", "isSoldOut": true},
+          {"id": "m6", "name": "Chicken Biryani", "description": "Aromatic basmati rice cooked with succulent chicken and spices", "category": "Main Course", "vendorId": "v1", "priceInCoins": 1.0, "isVeg": false, "imageUrl": "https://images.unsplash.com/photo-1563379091339-03b21bc4a4f8?q=80&w=500&auto=format&fit=crop", "isSoldOut": false}
         ]
       },
       {
@@ -72,8 +73,8 @@ class AppState extends ChangeNotifier {
         "name": "Kitchen Atte",
         "logoUrl": "https://example.com/logo2.png",
         "menu": [
-          {"id": "m3", "name": "Thali", "description": "Full meal with dal, rice, and sabzi", "category": "Lunch", "vendorId": "v2", "priceInCoins": 1.0, "isSoldOut": false},
-          {"id": "m4", "name": "Veg Burger", "description": "Classic veg patty burger", "category": "Snacks", "vendorId": "v2", "priceInCoins": 1.0, "isSoldOut": false}
+          {"id": "m3", "name": "Thali", "description": "Complete meal including rice, dal, sabzi, roti and sweet", "category": "Combo", "vendorId": "v2", "priceInCoins": 1.0, "isVeg": true, "imageUrl": "https://images.unsplash.com/photo-1546833999-b9f581a1996d?q=80&w=500&auto=format&fit=crop", "isSoldOut": false},
+          {"id": "m4", "name": "Veg Burger", "description": "Crispy vegetable patty with lettuce, tomato and cheese", "category": "Snacks", "vendorId": "v2", "priceInCoins": 1.0, "isVeg": true, "imageUrl": "https://images.unsplash.com/photo-1550547660-d9450f859349?q=80&w=500&auto=format&fit=crop", "isSoldOut": false}
         ]
       }
     ]
@@ -177,37 +178,6 @@ class AppState extends ChangeNotifier {
 
   void _checkLogic() {
     // Time limit logic disabled for testing
-    /*
-    final hour = _currentTime.hour;
-    final minute = _currentTime.minute;
-
-    if (user.role == UserRole.student &&
-        user.isSubscribed &&
-        (hour > 11 || (hour == 11 && minute >= 1)) &&
-        user.lockedMealId == null &&
-        user.currentMealStatus == MealStatus.available) {
-      if (user.coins > 0) {
-        user.coins -= 1;
-        user.currentMealStatus = MealStatus.expired;
-        totalAutoDeductions++;
-        _syncToFirestore({
-          'coins': user.coins,
-          'currentMealStatus': user.currentMealStatus.name,
-        });
-      }
-    }
-
-    if (hour == 0 && minute == 0 && user.currentMealStatus != MealStatus.available) {
-      user.lockedMealId = null;
-      user.lockedVendorId = null;
-      user.currentMealStatus = MealStatus.available;
-      _syncToFirestore({
-        'lockedMealId': null,
-        'lockedVendorId': null,
-        'currentMealStatus': MealStatus.available.name,
-      });
-    }
-    */
   }
 
   bool isLockWindow() => true; // Always open for testing
